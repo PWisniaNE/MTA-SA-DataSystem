@@ -1,21 +1,24 @@
 addEvent("onElementCustomDataChange")
 
-local dataSystem = {}
-dataSystem.server = {}
-dataSystem.synced = {}
-dataSystem.client = {}
-dataSystem.group = {}
-dataSystem.buffer = {}
+local dataSystem = {
+	data = {},
+	timers = {},
+	buffer = {
+		synced = {},
+		selected = {},	
+	},
+}
 
--- TO USE WITH MYSQL SAVE SYSTEM (WITH THIS YOU CAN EASLY LOAD PLAYER DATA ON RESOUCE START)
+-- DO UŻYCIA Z SYTEMEM ZAPISU DANYCH MYSQL
 local playerElement = createElement("playerElement","playerElement")
 local otherElement = createElement("otherElement","otherElement")
 
--- SET CUSTOM DATA
-function setCustomData(element,name,variable,key)
-    if not element or not name or not variable then return end
-
-    local selectedKey = key or "synced"
+function setCustomData(element,name,variable,selectedKey)
+    -- WERYFIKACJA
+    if not element or not name or not variable then 
+        return
+    end
+    -- DODAWANIE DATY
     local elements = {}
     if type(element) == "table" then
         elements = element
@@ -25,108 +28,114 @@ function setCustomData(element,name,variable,key)
 
     for i=1,#elements do 
         local elem = elements[i]
-		if dataSystem[selectedKey][elem] then
-            triggerEvent("onElementCustomDataChange",elem,name,dataSystem[selectedKey][elem][name],variable)           
-	        dataSystem[selectedKey][elem][name] = variable		
+		if dataSystem.data[elem] then
+            triggerEvent("onElementCustomDataChange",elem,name,dataSystem.data[elem][name],variable)           
+	        dataSystem.data[elem][name] = variable		
 		else
-			dataSystem[selectedKey][elem] = {}
-            triggerEvent("onElementCustomDataChange",elem,name,dataSystem[selectedKey][elem][name],variable)           			
-			dataSystem[selectedKey][elem][name] = variable			
+			dataSystem.data[elem] = {}
+            triggerEvent("onElementCustomDataChange",elem,name,dataSystem.data[elem][name],variable)           			
+			dataSystem.data[elem][name] = variable			
 		end
     end
-
-    if key ~= "server" then
-        dataSystem.buffer[element] = {name,variable}
-        if key == "client" then
-            setTimer(synchronizeData,10,1,elements[1],selectedKey,name,variable)
-        elseif key == "group" then
-            setTimer(synchronizeData,10,1,elements,selectedKey,name,variable)
-        elseif key == "synced" or key == nil then
-            setTimer(synchronizeData,10,1,getElementsByType("player"),selectedKey,name,variable)
+	
+	if selectedKey == true or selectedKey == nil then 
+		for i=1,#elements do 
+			local bufferLocal = dataSystem.buffer["synced"]	
+			local bufferSize = #bufferLocal+1
+			bufferLocal[bufferSize] = {elements[i],name,variable}
+		end		 
+		if isTimer(dataSystem.timers["global"]) then
+			killTimer(dataSystem.timers["global"])
+			dataSystem.timers["global"] = nil
 		end
-    end 
+		dataSystem.timers["global"]	= setTimer(synchronizeData,20,1)	
+	elseif selectedKey == false then 
+		for i=1,#elements do 
+			if not dataSystem.buffer["selected"][elements[i]] then
+				dataSystem.buffer["selected"][elements[i]] = {}
+			end
+			local userBuffer = dataSystem.buffer["selected"][elements[i]]			
+			local bufferSize = #userBuffer+1			
+			userBuffer[bufferSize] = {elements[i],name,variable}	
+			if isTimer(dataSystem.timers[elements[i]]) then
+				killTimer(dataSystem.timers[elements[i]])
+				dataSystem.timers[elements[i]] = nil
+			end
+			dataSystem.timers[elements[i]] = setTimer(synchronizeData,20,1,elements[i])	
+		end
+	end
 end
 
--- GET CUSTOM DATA (RETURN VALUE IF EXISTS)
-function getCustomData(element,name,key)
-    local selectedKey = key or "synced"
-    if dataSystem[selectedKey][element] then 
-        return dataSystem[selectedKey][element][name]
+function getCustomData(element,name)
+    if dataSystem.data[element] then 
+        return dataSystem.data[element][name]
     end
 end
 
--- GET ALL CUSTOM DATA FROM ELEMENT (RETURN DATA IF EXISTS)
-function getAllCustomData(element,key)
-    local selectedKey = key or "synced"
-    if dataSystem[selectedKey][element] then 
-        return dataSystem[selectedKey][element]
+function getAllCustomData(element,name)
+    if dataSystem.data[element] then 
+        return dataSystem.data[element]
     end
 end
 
--- GET ELEMENTS WHICH HAVE SELECTED DATA (RETURN TABLE OF ELEMENTS)
 function getElementsByCustomData(name,key)
-    local selectedKey = key or "synced"
     local tableList = {}
-    for element,variable in pairs(dataSystem[selectedKey]) do
-        if dataSystem[selectedKey][element][name] then 
+    for element,variable in pairs(dataSystem.data) do
+        if dataSystem.data[element][name] then 
             tableList[#tableList+1] = element 
         end
     end
     return #tableList == 0 and false or tableList
 end
 
--- CHECK ELEMENT HAVE CUSTOM DATA (RETURN DATA IF HAVE)
-function hasCustomData(element, selectedKey, name, variable)
-    local selectedKey = key or "synced"
+function hasCustomData(element,name,variable)
     local validateElement = isElement(element)
     if validateElement and not name and not variable then
-        return dataSystem[selectedKey][elements] or false
+        return dataSystem.data[element] or false
     elseif validateElement and name and not variable then
-        return dataSystem[selectedKey][elements] and dataSystem[selectedKey][elements][name] ~= nil or false
+        return dataSystem.data[element] and dataSystem.data[element][name] ~= nil or false
     elseif validateElement and name and variable then
-        return dataSystem[selectedKey][elements] and dataSystem[selectedKey][elements][name] == variable or false
+        return dataSystem.data[element] and dataSystem.data[element][name] == variable or false
     end
     return false
 end
 
--- REMOVE CUSTOM DATA
-function removeCustomData(element,name,key)
-    local selectedKey = key or "server"
-    if dataSystem[selectedKey][element] then 
-        dataSystem[selectedKey][element][name] = nil
+function removeCustomData(element,name)
+    if dataSystem.data[element] then 
+        dataSystem.data[element][name] = nil
     end
 end
 
--- SYNCHRONIZE UPDATED DATA WITH ELEMENTS
-local function synchronizeData(element,type,name,variable)
-    for i=1,#element do 
-        if type == "synced" then 
-            triggerLatentClientEvent(getElementsByType("player"),"getSynchronizeFromServer",root,element[i],name,variable)
-        elseif type == "group" then
-            triggerLatentClientEvent(element[i],"getSynchronizeFromServer",root,element[i],name,variable,true)                     
-        else     
-            triggerLatentClientEvent(element[i],"getSynchronizeFromServer",root,element[i],name,variable)           
-        end
-    end
+function synchronizeData(element)
+	if not element then 
+		local bufferLocal = dataSystem.buffer["synced"]	
+		if bufferLocal ~= nil then
+			triggerLatentClientEvent(getElementsByType("player"),"getSynchronizeFromServer",root,bufferLocal)	
+			dataSystem.buffer["synced"] = {}	
+			dataSystem.timers["global"] = nil
+		end
+	else 
+		local bufferLocal = dataSystem.buffer["selected"][element]
+		if bufferLocal ~= nil then
+			triggerLatentClientEvent(element,"getSynchronizeFromServer",root,bufferLocal)                     			 	
+			dataSystem.buffer["selected"][element] = nil
+			dataSystem.timers[element] = nil			
+		end
+	end
 end
 
--- ON PLAYER JOIN SEND HIM ALL SERVER SYNCED PLAYER DATA
 local function onPlayerJoin()
-	triggerLatentClientEvent(source,"synchronizeLocalPlayer",source,dataSystem["synced"])  
+	triggerLatentClientEvent(source,"synchronizeLocalPlayer",source,dataSystem.data)  
 end
 addEventHandler("onPlayerJoin",root,onPlayerJoin)
 
--- ON ELEMENT DESTROY/PLAYER QUIET DESTROY HIS DATA FROM TABLES
 local function elementDestroy()
-	dataSystem["synced"][source] = nil
-	dataSystem["server"][source] = nil
-	dataSystem["client"][source] = nil
-end
+	dataSystem.data[source] = nil
+end 
 addEventHandler("onPlayerQuit",root,elementDestroy)
 addEventHandler("onElementDestroy",root,elementDestroy) 
 
--- SECURE SYSTEM DATA ON RESOURCE RESTART
-local function loadDataSystem()
+function loadDataSystem()
 	local getSave = getElementData(root,"dataSystem")
 	if getSave then 
 		dataSystem = getSave
@@ -134,7 +143,7 @@ local function loadDataSystem()
 end
 addEventHandler("onResourceStart",resourceRoot,loadDataSystem)
 
-local function saveDataSystem()
-	setElementData(root,"dataSystem",dataSystem)
+function saveDataSystem()
+	setElementData(root,"dataSystem",dataSystem,false)
 end
 addEventHandler("onResourceStop",resourceRoot,saveDataSystem)

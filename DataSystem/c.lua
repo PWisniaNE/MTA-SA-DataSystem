@@ -1,32 +1,29 @@
 local dataSystem = {}
 
--- LOAD ALL DATA ON PLAYER JOIN OR RESOURCE START
 addEvent("synchronizeLocalPlayer",true)
 addEventHandler("synchronizeLocalPlayer",root,function(data)
 	dataSystem = data	
 end)
-
--- GET SYNCHRONIZATION FROM SERVER
+ 
 addEvent("getSynchronizeFromServer",true)
-addEventHandler("getSynchronizeFromServer",root,function(element,name,variable,group)
-    if group == true then 
-        if dataSystem["group"][element] then 
-            dataSystem["group"][element][name] = variable
-        else 
-            dataSystem["group"][element] = {}
-            dataSystem["group"][element][name] = variable
-        end
-    else 
-       if dataSystem[element] then 
-            dataSystem[element][name] = variable
-        else 
-            dataSystem[element] = {}
-            dataSystem[element][name] = variable
-        end
-    end
+addEventHandler("getSynchronizeFromServer",root,function(buffer)
+	if not buffer or type(buffer) ~= "table" then return end
+	for i=1,#buffer do 
+		local getBufferRow = buffer[i]
+		if getBufferRow then
+			local element = getBufferRow[1]
+			local name = getBufferRow[2]
+			local value =  getBufferRow[3]
+		    if dataSystem[element] then 
+				dataSystem[element][name] = value
+			else 
+				dataSystem[element] = {}
+				dataSystem[element][name] = value
+			end
+		end
+	end
 end)
 
--- GET CUSTOM DATA (RETURN VALUE IF EXISTS)
 function getCustomData(element,name) 
 	if element and isElement(element) and name then
 		if dataSystem[element] then
@@ -37,17 +34,15 @@ function getCustomData(element,name)
 	end
 end
 
--- SET CUSTOM DATA
-function setCustomData(element,name,variable) 
-   if dataSystem[element] then 
-		dataSystem[element][name] = variable
+function setCustomData(name,variable) 
+   if dataSystem[localPlayer] then 
+		dataSystem[localPlayer][name] = value
 	else 
-		dataSystem[element] = {}
-		dataSystem[element][name] = variable
+		dataSystem[localPlayer] = {}
+		dataSystem[localPlayer][name] = value
 	end
 end
 
--- CHECK ELEMENT HAVE CUSTOM DATA (RETURN DATA IF HAVE)
 function hasCustomData(element,name,variable)
     local validateElement = isElement(element)
     if validateElement and not name and not variable then
@@ -57,5 +52,29 @@ function hasCustomData(element,name,variable)
     elseif validateElement and name and variable then
         return dataSystem[element] and dataSystem[element][name] == variable or false
     end
-	return false
+    return false
 end
+
+function setTableProtected (tbl)
+  return setmetatable ({}, 
+    {
+    __index = tbl,  -- read access gets original table item
+    __newindex = function (t, n, v)
+       error ("attempting to change constant " .. 
+             tostring (n) .. " to " .. tostring (v), 2)
+      end -- __newindex, error protects from editing
+    })
+end
+
+function loadDataSystem()
+	local getSave = getElementData(localPlayer,"dataSystem")
+	if getSave then 
+		dataSystem = getSave
+	end
+end
+addEventHandler("onClientResourceStart",resourceRoot,loadDataSystem)
+
+function saveDataSystem()
+	setElementData(localPlayer,"dataSystem",setTableProtected(dataSystem), false)
+end
+addEventHandler("onClientResourceStop",resourceRoot,saveDataSystem)
